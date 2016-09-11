@@ -1,40 +1,41 @@
-FROM ruby:2.2.0
-
+FROM alpine:latest
 MAINTAINER Jarod Watkins <jwatkins@jarodw.com>
 
-RUN apt-get update \
-  && apt-get install -y automake libass-dev libfreetype6-dev libgpac-dev \
-    libtheora-dev libtool libvorbis-dev pkg-config texi2html zlib1g-dev \
-    libx264-dev libmp3lame-dev yasm git \
-  && cd /usr/local/src \
-  && git clone --depth 1 git://github.com/mstorsjo/fdk-aac.git \
+ENV PKG_CONFIG_PATH /ffmpeg_build/lib/pkgconfig
+RUN apk --no-cache add lame-dev libvorbis-dev zlib-dev x264-dev libtheora-dev \
+  libvpx-dev rtmpdump-dev v4l-utils-dev x265-dev git build-base libass-dev \
+  autoconf automake libtool ruby-dev libstdc++ coreutils bzip2 yasm ruby-bundler \
+  ruby-json \
+  && mkdir /ffmpeg_sources \
+  && cd /ffmpeg_sources \
+  && git clone https://github.com/mstorsjo/fdk-aac.git \
   && cd fdk-aac \
   && autoreconf -fiv \
-  && ./configure --disable-shared \
+  && ./configure --prefix="/ffmpeg_build" --disable-shared \
   && make \
   && make install \
   && make distclean \
-  && mkdir -p /ffmpeg/bin \
-  && cd /usr/local/src \
+  && cd /ffmpeg_sources \
   && git clone --depth 1 git://source.ffmpeg.org/ffmpeg \
   && cd ffmpeg \
-  && ./configure --extra-libs="-ldl" --bindir="/ffmpeg/bin" --enable-gpl \
-    --enable-libx264 --enable-libfdk-aac --enable-nonfree --enable-libmp3lame \
-    --enable-libass --enable-libfreetype \
+  && ./configure --prefix="/ffmpeg_build" --pkg-config-flags="--static" --enable-gpl \
+    --extra-cflags="/ffmpeg_build/include" --extra-ldflags="-L/ffmpeg_build/lib" \
+    --bindir="/ffmpeg/bin" --enable-gpl --enable-libx264 --enable-libfdk-aac \
+    --enable-nonfree --enable-libmp3lame --enable-libass --enable-libfreetype \
   && make \
   && make install \
   && make distclean \
   && hash -r \
-  && git clone -b docker --single-branch git://github.com/ipstatic/wallop.git /wallop \
+  && git clone --depth 1 https://github.com/maddox/wallop.git /wallop \
   && cd /wallop \
   && bundle install --standalone --binstubs --local --path vendor/gems --quiet \
-  && rm -rf /usr/local/src \
-  && apt-mark unmarkauto libass5 \
-  && apt-get purge -y --auto-remove automake libfreetype6-dev \
-    libgpac-dev libtheora-dev libtool libvorbis-dev pkg-config texi2html \
-    zlib1g-dev yasm git 
+  && apk del libvorbis-dev zlib-dev libtheora-dev libvpx-dev rtmpdump-dev \
+  v4l-utils-dev x265-dev git build-base autoconf automake libtool ruby-dev \
+  && rm -rf /ffmpeg_sources \
+  && rm -rf /ffmpeg_build
 
-ADD scripts/start.sh /start.sh
-
+WORKDIR /wallop
+VOLUME /tmp
 EXPOSE 8888
-CMD /start.sh
+ENV RACK_ENV production
+ENTRYPOINT ["script/server"]
